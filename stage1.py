@@ -83,7 +83,7 @@ def create_save_path():
         opt_str += '-m%s' % args.momentum
     opt_str = 'e%d-b%d-%s-lr%s-wd%s-%s' % (args.epochs, args.batch_size, opt_str, args.lr, args.wd, decay_str)
     #reweighting_fn_str = 'sign' 
-    loss_str = 'odc%s-Lambda0%s-Lambda1%s-Lambda2%s-Lambda3%s-tau%s' % (args.odc, args.Lambda0, args.Lambda1,args.Lambda2,args.Lambda3, 0)
+    loss_str = 'odc%s-Lambda0%s-Lambda1%s-tau%s' % (args.odc, args.Lambda0, args.Lambda1, 0)
 
     exp_str = '%s_%s' % (opt_str, loss_str)
     if args.timestamp:

@@ -43,7 +43,7 @@ def get_args_parser():
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--wd', type=float, default=5e-4, help='weight decay')
     parser.add_argument('--momentum', '-m', type=float, default=0.9, help='Momentum.')
-    parser.add_argument('--decay_epochs', '--de', default=[60,80], nargs='+', type=int, help='milestones for multisteps lr decay')
+    parser.add_argument('--decay_epochs', '--de', default=[58,60], nargs='+', type=int, help='milestones for multisteps lr decay')
     parser.add_argument('--opt', default='adam', choices=['sgd', 'adam'], help='which optimizer to use')
     parser.add_argument('--decay', default='cos', choices=['cos', 'multisteps'], help='which lr decay method to use')
     parser.add_argument('--Lambda0', default=1, type=float, help='CutMix weight')

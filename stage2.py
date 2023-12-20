@@ -63,7 +63,7 @@ def get_args_parser():
 def create_save_path():
     # mkdirs:
     opt_str = 'e%d-b%d-%s-lr%s-wd%s-cos' % (args.epochs, args.batch_size, args.opt, args.lr, args.wd)
-    loss_str = 'LA-tau%s%s%s-Lambda%s' % (args.tau0,args.tau1,args.tau2,args.Lambda)
+    loss_str = 'LA-tau%s%s%s' % (args.tau0,args.tau1,args.tau2)
     exp_str = '%s_%s' % (opt_str, loss_str) if loss_str else opt_str
     exp_str = 'finetune_%s_' % args.layer + exp_str
     if args.timestamp:

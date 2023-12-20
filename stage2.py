@@ -171,7 +171,7 @@ def train(gpu_id, ngpus_per_node, args):
         train_set = IMBALANCECIFAR100(train=True, transform=train_transform, imbalance_ratio=args.imbalance_ratio, root=args.data_root_path)
         test_set = IMBALANCECIFAR100(train=False, transform=test_transform, imbalance_ratio=args.imbalance_ratio, root=args.data_root_path)
     elif args.dataset == 'imagenet':
-        num_classes = args.id_class_number
+        num_classes = 1000 + odc
         train_set = LT_Dataset(
             os.path.join(args.data_root_path, 'imagenet'), './datasets/ImageNet_LT/ImageNet_LT_train.txt', transform=train_transform, 
             subset_class_idx=np.arange(0,args.id_class_number))
@@ -270,47 +270,62 @@ def train(gpu_id, ngpus_per_node, args):
             in_data, labels = in_data.to(device), labels.to(device)
             in_labels = labels  +odc
             # forward:
-            head_idx0 = (in_labels>=odc) & (in_labels<odc+4)
-            tail_idx0 = in_labels>=odc+6
-            head_num = torch.nonzero((in_labels>=odc) & (in_labels<odc+4)).shape[0]
-            tail_num = torch.nonzero(in_labels>=odc+6).shape[0]
+            if args.dataset == 'cifar10' :
+                head_idx0 = (in_labels>=odc) & (in_labels<odc+4)
+                tail_idx0 = in_labels>=odc+6
+                head_num = torch.nonzero((in_labels>=odc) & (in_labels<odc+4)).shape[0]
+                tail_num = torch.nonzero(in_labels>=odc+6).shape[0]
+            elif args.dataset == 'cifar100' :
+                head_idx0 = (in_labels>=odc) & (in_labels<odc+40)
+                tail_idx0 = in_labels>=odc+60
+                head_num = torch.nonzero((in_labels>=odc) & (in_labels<odc+40)).shape[0]
+                tail_num = torch.nonzero(in_labels>=odc+60).shape[0]
+            elif args.dataset == 'imagenet' :
+                head_idx0 = (in_labels>=odc) & (in_labels<odc+500)
+                tail_idx0 = in_labels>=odc+500
+                head_num = torch.nonzero((in_labels>=odc) & (in_labels<odc+500)).shape[0]
+                tail_num = torch.nonzero(in_labels>=odc+500).shape[0]
 
-            # head_idx0 = (in_labels>=odc) & (in_labels<odc+4)
-            # tail_idx0 = (in_labels>=odc+5) & (in_labels<odc+10)
-            # head_num = torch.nonzero((in_labels>=odc) & (in_labels<odc+4)).shape[0]
-            # tail_num = torch.nonzero((in_labels>=odc+5) & (in_labels<odc+10)).shape[0]
             if tail_num != 0:
                 times = head_num // tail_num
-            
-                tail = in_data[tail_idx0]
-                tail_label = in_labels[tail_idx0]
-                tail_data = tail
-                tail_labels = tail_label
-                for i in range(times-1):
-                    tail_data = torch.cat([tail_data, tail], dim=0)
-                    tail_labels = torch.cat([tail_labels, tail_label],dim=0)
-                extra_data = in_data[head_idx0][:tail_labels.size(0)]
+                if times != 0:
+                    tail = in_data[tail_idx0]
+                    tail_label = in_labels[tail_idx0]
+                    tail_data = tail
+                    tail_labels = tail_label
+                    for i in range(times-1):
+                        tail_data = torch.cat([tail_data, tail], dim=0)
+                        tail_labels = torch.cat([tail_labels, tail_label],dim=0)
+                    extra_data = in_data[head_idx0][:tail_labels.size(0)]
 
-                lam = np.random.beta(0.9999, 0.9999)
-                #bbx1, bby1, bbx2, bby2 = rand_bbox(tail_data.size(), lam)
-                bbx1, bby1, bbx2, bby2 = rand_bbox_withcenter(tail_data.size(), lam, 16, 16)
-                extra_data[:, :, bbx1:bbx2, bby1:bby2] = tail_data[:, :, bbx1:bbx2, bby1:bby2]
+                    lam = np.random.beta(0.9999, 0.9999)
+                    bbx1, bby1, bbx2, bby2 = rand_bbox(tail_data.size(), lam)
+                    extra_data[:, :, bbx1:bbx2, bby1:bby2] = tail_data[:, :, bbx1:bbx2, bby1:bby2]
 
-                in_data = torch.cat([in_data, extra_data], dim=0)
+                    in_data = torch.cat([in_data, extra_data], dim=0)
 
-                all_logits0, all_logits1, all_logits2 = model(in_data)
-                # adjust logits:
-                adjusted_all_logits0 = all_logits0 + args.tau0 * prior.log()[None,:]
-                lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels)#+ \
-                        #args.Lambda * F.cross_entropy(adjusted_all_logits0[train_batch_size:], tail_labels)
+                    all_logits0, all_logits1, all_logits2 = model(in_data)
 
-                adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
-                lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels) #+ \
-                        #args.Lambda * F.cross_entropy(adjusted_all_logits1[train_batch_size:], tail_labels)
+                    adjusted_all_logits0 = all_logits0+ args.tau0 * prior.log()[None,:]
+                    lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels) #+ \
 
-                adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
-                lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels) #+ \
-                        #args.Lambda * F.cross_entropy(adjusted_all_logits2[train_batch_size:], tail_labels)
+                    adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
+                    lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels) #+ \
+                            #args.Lambda * F.cross_entropy(adjusted_all_logits1[train_batch_size:], tail_labels)
+
+                    adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
+                    lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels) #+ \
+                            #args.Lambda * F.cross_entropy(adjusted_all_logits2[train_batch_size:], tail_labels)
+                    loss = lt_loss0 + lt_loss1 + lt_loss2
+                else :
+                    all_logits0, all_logits1, all_logits2 = model(in_data)
+                    # adjust logits:
+                    adjusted_all_logits0 = all_logits0 + args.tau0 * prior.log()[None,:]
+                    lt_loss0 = F.cross_entropy(adjusted_all_logits0, in_labels)
+                    adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
+                    lt_loss1 = F.cross_entropy(adjusted_all_logits1, in_labels) 
+                    adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
+                    lt_loss2 = F.cross_entropy(adjusted_all_logits2, in_labels) 
             else :
                 all_logits0, all_logits1, all_logits2 = model(in_data)
                 # adjust logits:
@@ -319,22 +334,10 @@ def train(gpu_id, ngpus_per_node, args):
                 adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
                 lt_loss1 = F.cross_entropy(adjusted_all_logits1, in_labels) 
                 adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
-                lt_loss2 = F.cross_entropy(adjusted_all_logits2, in_labels) 
+                lt_loss2 = F.cross_entropy(adjusted_all_logits2, in_labels)  
 
-            #loss = in_loss
+
             loss = lt_loss0 + lt_loss1 + lt_loss2
-
-
-            # adjusted_all_logits0 = all_logits0 + 1 * prior.log()[None,:]
-            # lt_loss0 = F.cross_entropy(adjusted_all_logits0, in_labels)
-            # med_tail_idx = (in_labels>=round( (num_classes-odc)/3) +odc)
-            # adjusted_all_logits1 = all_logits1 + 1 * prior.log()[None,:]
-            # lt_loss1 = F.cross_entropy(adjusted_all_logits1[med_tail_idx], in_labels[med_tail_idx])
-            # tail_idx = (in_labels>=round(2*(num_classes-odc)/3)+odc)
-            # adjusted_all_logits2 = all_logits2 + 1 * prior.log()[None,:]
-            # lt_loss2 = F.cross_entropy(adjusted_all_logits2[tail_idx], in_labels[tail_idx])
-            # #loss = in_loss
-            # loss = lt_loss0 + 0.6*lt_loss1 + 0.1*lt_loss2
 
             # backward:
             optimizer.zero_grad()
@@ -561,8 +564,11 @@ if __name__ == '__main__':
     args.save_dir = save_dir
     
     # set CUDA:
-    if args.num_nodes == 1: # When using multiple nodes, we assume all gpus on each node are available.
+    if args.num_nodes == 1 : # When using multiple nodes, we assume all gpus on each node are available.
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu 
+    
+    if args.num_nodes == 1 and args.ddp : 
+        os.environ['CUDA_VISIBLE_DEVICES'] = '1,2'
 
     if args.ddp:
         ngpus_per_node = torch.cuda.device_count()

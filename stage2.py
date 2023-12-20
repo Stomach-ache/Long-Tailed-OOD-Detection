@@ -262,7 +262,7 @@ def train(gpu_id, ngpus_per_node, args):
         if args.ddp:
             train_sampler.set_epoch(epoch)
         model.train()    
-        #set_mode_to_train(model, args)
+        set_mode_to_train(model, args)
         train_acc_meter, training_loss_meter = AverageMeter(), AverageMeter()
         for batch_idx, (in_data, labels) in enumerate(train_loader):
             in_data, labels = in_data.to(device), labels.to(device)

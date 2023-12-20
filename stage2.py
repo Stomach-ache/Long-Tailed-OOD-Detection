@@ -40,6 +40,7 @@ def get_args_parser():
     parser.add_argument('--decay', default='cos', choices=['cos', 'multisteps'], help='which lr decay method to use')
     parser.add_argument('--decay_epochs', '--de', default=[1,2], nargs='+', type=int, help='milestones for multisteps lr decay')
     parser.add_argument('--num_ood_samples', default=30000, type=float, help='Number of OOD samples to use.')
+    parser.add_argument('--Lambda', default=1, type=float, help='LT')
     parser.add_argument('--tau0', type=float, default=1, help='logit adjustment hyper-parameter')
     parser.add_argument('--tau1', type=float, default=1, help='logit adjustment hyper-parameter')
     parser.add_argument('--tau2', type=float, default=1, help='logit adjustment hyper-parameter')
@@ -69,7 +70,7 @@ def create_save_path():
     if args.timestamp:
         exp_str += '_%s' % datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     dataset_str = '%s-%s-OOD%d' % (args.dataset, args.imbalance_ratio, args.num_ood_samples) if 'imagenet' not in args.dataset else '%s%d-lt' % (args.dataset, args.id_class_number)
-    save_dir = os.path.join(args.save_root_path, 'LT_OOD_results', 'EAT', dataset_str, args.model, args.pretrained_exp_str, exp_str)
+    save_dir = os.path.join(args.save_root_path, 'LT_OOD_results', 'PASCL', dataset_str, args.model, args.pretrained_exp_str, exp_str)
     print('Saving to %s' % save_dir)
     create_dir(save_dir)
 
@@ -188,7 +189,7 @@ def train(gpu_id, ngpus_per_node, args):
     print('Training on %s with %d images and %d validation images.' % (args.dataset, len(train_set), len(test_set)))
     # get prior distributions:
     img_num_per_cls = np.array(train_set.img_num_per_cls)
-    extendlist = [ 1000 for i in range(odc) ]
+    extendlist = [ 10000 for i in range(odc) ]
     img_num_per_cls1 = np.append(extendlist, img_num_per_cls)
     prior = img_num_per_cls1 / np.sum(img_num_per_cls1)
     prior = torch.from_numpy(prior).float().to(device)
@@ -210,6 +211,7 @@ def train(gpu_id, ngpus_per_node, args):
     print('Loading ckpt from %s' % pretrained_ckpt_path)
     ckpt = torch.load(pretrained_ckpt_path)
     model.load_state_dict(ckpt['model'], strict=False)
+    #model.load_state_dict(ckpt, strict=False)
     # only update bn and fc layers:
     # WARNING: All parameters with requires_grad=True should participate in loss calculation or DDP will complain. 
     fp.write('ALl parameters requiring grad:'+'\n')    
@@ -232,14 +234,13 @@ def train(gpu_id, ngpus_per_node, args):
         p.requires_grad = False
         if any([_name in name for _name in ['linear_classfier']]):
             p.requires_grad = True
-        #if any([_name in name for _name in ['bn']]):
-        #    p.eval() 
+            
+
         if p.requires_grad:
             print(name)
             fp.write(name+'\n')
-        
-    #set_mode_to_train(model, args, fp)
-
+    set_mode_to_train(model, args, fp)
+    # exit(0)
 
     # optimizer:
     if args.opt == 'adam':
@@ -261,30 +262,23 @@ def train(gpu_id, ngpus_per_node, args):
         # reset sampler when using ddp:
         if args.ddp:
             train_sampler.set_epoch(epoch)
-        model.train()    
+
         set_mode_to_train(model, args)
+        # model.train()
         train_acc_meter, training_loss_meter = AverageMeter(), AverageMeter()
         for batch_idx, (in_data, labels) in enumerate(train_loader):
             in_data, labels = in_data.to(device), labels.to(device)
             in_labels = labels  +odc
-
             # forward:
-            if args.dataset == 'cifar10' :
-                head_idx0 = (labels>=odc) & (labels<odc+4)
-                tail_idx0 = labels>=odc+6
-                head_num = torch.nonzero((labels>=odc) & (labels<odc+4)).shape[0]
-                tail_num = torch.nonzero(labels>=odc+6).shape[0]
-            elif args.dataset == 'cifar100' :
-                head_idx0 = (labels>=odc) & (labels<odc+40)
-                tail_idx0 = labels>=odc+60
-                head_num = torch.nonzero((labels>=odc) & (labels<odc+40)).shape[0]
-                tail_num = torch.nonzero(labels>=odc+60).shape[0]
-            elif args.dataset == 'imagenet' :
-                head_idx0 = (labels>=odc) & (labels<odc+500)
-                tail_idx0 = labels>=odc+500
-                head_num = torch.nonzero((labels>=odc) & (labels<odc+500)).shape[0]
-                tail_num = torch.nonzero(labels>=odc+500).shape[0]
+            head_idx0 = (in_labels>=odc) & (in_labels<odc+4)
+            tail_idx0 = in_labels>=odc+6
+            head_num = torch.nonzero((in_labels>=odc) & (in_labels<odc+4)).shape[0]
+            tail_num = torch.nonzero(in_labels>=odc+6).shape[0]
 
+            # head_idx0 = (in_labels>=odc) & (in_labels<odc+4)
+            # tail_idx0 = (in_labels>=odc+5) & (in_labels<odc+10)
+            # head_num = torch.nonzero((in_labels>=odc) & (in_labels<odc+4)).shape[0]
+            # tail_num = torch.nonzero((in_labels>=odc+5) & (in_labels<odc+10)).shape[0]
             if tail_num != 0:
                 times = head_num // tail_num
             
@@ -298,15 +292,17 @@ def train(gpu_id, ngpus_per_node, args):
                 extra_data = in_data[head_idx0][:tail_labels.size(0)]
 
                 lam = np.random.beta(0.9999, 0.9999)
-                bbx1, bby1, bbx2, bby2 = rand_bbox(tail_data.size(), lam)
+                #bbx1, bby1, bbx2, bby2 = rand_bbox(tail_data.size(), lam)
+                bbx1, bby1, bbx2, bby2 = rand_bbox_withcenter(tail_data.size(), lam, 16, 16)
                 extra_data[:, :, bbx1:bbx2, bby1:bby2] = tail_data[:, :, bbx1:bbx2, bby1:bby2]
 
                 in_data = torch.cat([in_data, extra_data], dim=0)
 
                 all_logits0, all_logits1, all_logits2 = model(in_data)
-
-                adjusted_all_logits0 = all_logits0+ args.tau0 * prior.log()[None,:]
-                lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels) #+ \
+                # adjust logits:
+                adjusted_all_logits0 = all_logits0 + args.tau0 * prior.log()[None,:]
+                lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels)#+ \
+                        #args.Lambda * F.cross_entropy(adjusted_all_logits0[train_batch_size:], tail_labels)
 
                 adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
                 lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels) #+ \
@@ -368,8 +364,9 @@ def train(gpu_id, ngpus_per_node, args):
             with torch.no_grad():
                 for data, labels in test_loader:
                     data, labels = data.to(device), labels.to(device)
-                    logits0, logits1, logits2 = model(data)
-                    pred = (F.softmax(logits0,dim=1)+F.softmax(logits1,dim=1)+F.softmax(logits2,dim=1))[:,odc:].argmax(dim=1, keepdim=True)
+                    logits0, logits1, logits2= model(data)
+                    #pred = (F.softmax(logits0,dim=1)+F.softmax(logits1,dim=1)+F.softmax(logits2,dim=1))[:,odc:].argmax(dim=1, keepdim=True)
+                    pred = (logits0+logits1+logits2)[:,odc:].argmax(dim=1, keepdim=True)
                     pred0 = logits0[:,odc:].argmax(dim=1, keepdim=True)
                     pred1 = logits1[:,odc:].argmax(dim=1, keepdim=True)
                     pred2 = logits2[:,odc:].argmax(dim=1, keepdim=True)  # get the index of the max log-probability
@@ -533,6 +530,20 @@ def rand_bbox(size, lam):
     # uniform
     cx = np.random.randint(W)
     cy = np.random.randint(H)
+
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+    return bbx1, bby1, bbx2, bby2
+
+def rand_bbox_withcenter(size, lam, cx, cy):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = int(W * cut_rat)
+    cut_h = int(H * cut_rat)
 
     bbx1 = np.clip(cx - cut_w // 2, 0, W)
     bby1 = np.clip(cy - cut_h // 2, 0, H)

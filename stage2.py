@@ -316,7 +316,7 @@ def train(gpu_id, ngpus_per_node, args):
                 lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels) #+ \
                         #args.Lambda * F.cross_entropy(adjusted_all_logits2[train_batch_size:], tail_labels)
             else :
-                all_logits0, all_logits1, all_logits2, _ = model(in_data)
+                all_logits0, all_logits1, all_logits2 = model(in_data)
                 # adjust logits:
                 adjusted_all_logits0 = all_logits0 + args.tau0 * prior.log()[None,:]
                 lt_loss0 = F.cross_entropy(adjusted_all_logits0, in_labels)

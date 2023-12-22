@@ -495,12 +495,12 @@ if __name__ == '__main__':
     else:
         ckpt = torch.load(os.path.join(args.ckpt_path, 'best_clean_acc.pth'))
     new_state_dict = {}
-    for key, value in ckpt.items():
-        if  not key.startswith("module"):
-            new_key = "module." + key  
-            new_state_dict[new_key] = value
-    model.load_state_dict(new_state_dict, strict=True)
-    #model.load_state_dict(ckpt, strict=True)   
+    # for key, value in ckpt.items():
+    #     if  not key.startswith("module"):
+    #         new_key = "module." + key  
+    #         new_state_dict[new_key] = value
+    # model.load_state_dict(new_state_dict, strict=True)
+    model.load_state_dict(ckpt, strict=True)   
     model.requires_grad_(False)
 
     # select a detection function:

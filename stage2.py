@@ -188,11 +188,16 @@ def train(gpu_id, ngpus_per_node, args):
                                 drop_last=False, pin_memory=True)
     print('Training on %s with %d images and %d validation images.' % (args.dataset, len(train_set), len(test_set)))
     # get prior distributions:
-    img_num_per_cls = np.array(train_set.img_num_per_cls)
-    extendlist = [ 10000 for i in range(odc) ]
-    img_num_per_cls1 = np.append(extendlist, img_num_per_cls)
-    prior = img_num_per_cls1 / np.sum(img_num_per_cls1)
-    prior = torch.from_numpy(prior).float().to(device)
+    if args.dataset == 'imagenet':
+        img_num_per_cls = np.array(train_set.img_num_per_cls)
+        prior = img_num_per_cls / np.sum(img_num_per_cls)
+        prior = torch.from_numpy(prior).float().to(device)
+    else :
+        img_num_per_cls = np.array(train_set.img_num_per_cls)
+        extendlist = [ 10000 for i in range(odc) ]
+        img_num_per_cls1 = np.append(extendlist, img_num_per_cls)
+        prior = img_num_per_cls1 / np.sum(img_num_per_cls1)
+        prior = torch.from_numpy(prior).float().to(device)
 
     # model:
     if args.model == 'ResNet18':
@@ -305,36 +310,53 @@ def train(gpu_id, ngpus_per_node, args):
                     in_data = torch.cat([in_data, extra_data], dim=0)
 
                     all_logits0, all_logits1, all_logits2 = model(in_data)
-
-                    adjusted_all_logits0 = all_logits0+ args.tau0 * prior.log()[None,:]
-                    lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels) #+ \
-
-                    adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
-                    lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels) #+ \
-                            #args.Lambda * F.cross_entropy(adjusted_all_logits1[train_batch_size:], tail_labels)
-
-                    adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
-                    lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels) #+ \
-                            #args.Lambda * F.cross_entropy(adjusted_all_logits2[train_batch_size:], tail_labels)
+                    if args.dataset == 'imagenet' :
+                        adjusted_all_logits0 = all_logits0[:, odc:] + args.tau0 * prior.log()[None,:]
+                        lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels-odc)
+                        adjusted_all_logits1 = all_logits1[:, odc:] + args.tau1 * prior.log()[None,:]
+                        lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels-odc)
+                        adjusted_all_logits2 = all_logits2[:, odc:] + args.tau2 * prior.log()[None,:]
+                        lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels-odc)
+                    else :
+                        adjusted_all_logits0 = all_logits0+ args.tau0 * prior.log()[None,:]
+                        lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels) 
+                        adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
+                        lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels) 
+                        adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
+                        lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels) 
                     loss = lt_loss0 + lt_loss1 + lt_loss2
                 else :
-                    all_logits0, all_logits1, all_logits2 = model(in_data)
-                    # adjust logits:
-                    adjusted_all_logits0 = all_logits0 + args.tau0 * prior.log()[None,:]
-                    lt_loss0 = F.cross_entropy(adjusted_all_logits0, in_labels)
-                    adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
-                    lt_loss1 = F.cross_entropy(adjusted_all_logits1, in_labels) 
-                    adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
-                    lt_loss2 = F.cross_entropy(adjusted_all_logits2, in_labels) 
+                    if args.dataset == 'imagenet' :
+                        adjusted_all_logits0 = all_logits0[:, odc:] + args.tau0 * prior.log()[None,:]
+                        lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels-odc)
+                        adjusted_all_logits1 = all_logits1[:, odc:] + args.tau1 * prior.log()[None,:]
+                        lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels-odc)
+                        adjusted_all_logits2 = all_logits2[:, odc:] + args.tau2 * prior.log()[None,:]
+                        lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels-odc)
+                    else :
+                        adjusted_all_logits0 = all_logits0+ args.tau0 * prior.log()[None,:]
+                        lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels) 
+                        adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
+                        lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels) 
+                        adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
+                        lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels) 
             else :
                 all_logits0, all_logits1, all_logits2 = model(in_data)
                 # adjust logits:
-                adjusted_all_logits0 = all_logits0 + args.tau0 * prior.log()[None,:]
-                lt_loss0 = F.cross_entropy(adjusted_all_logits0, in_labels)
-                adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
-                lt_loss1 = F.cross_entropy(adjusted_all_logits1, in_labels) 
-                adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
-                lt_loss2 = F.cross_entropy(adjusted_all_logits2, in_labels)  
+                if args.dataset == 'imagenet' :
+                        adjusted_all_logits0 = all_logits0[:, odc:] + args.tau0 * prior.log()[None,:]
+                        lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels-odc)
+                        adjusted_all_logits1 = all_logits1[:, odc:] + args.tau1 * prior.log()[None,:]
+                        lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels-odc)
+                        adjusted_all_logits2 = all_logits2[:, odc:] + args.tau2 * prior.log()[None,:]
+                        lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels-odc)
+                    else :
+                        adjusted_all_logits0 = all_logits0+ args.tau0 * prior.log()[None,:]
+                        lt_loss0 = F.cross_entropy(adjusted_all_logits0[:train_batch_size], in_labels) 
+                        adjusted_all_logits1 = all_logits1 + args.tau1 * prior.log()[None,:]
+                        lt_loss1 = F.cross_entropy(adjusted_all_logits1[:train_batch_size], in_labels) 
+                        adjusted_all_logits2 = all_logits2 + args.tau2 * prior.log()[None,:]
+                        lt_loss2 = F.cross_entropy(adjusted_all_logits2[:train_batch_size], in_labels)  
 
 
             loss = lt_loss0 + lt_loss1 + lt_loss2

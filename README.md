@@ -110,7 +110,9 @@ python test_imagenet.py --gpu 0 --odc 30 \
 
 ## Datasets download
 
-Since our experimental setup refers to previous papers, some relevant datasets such as "tinyimages80m" can be downloaded through this link：
+Since our experimental setup refers to previous papers, we have provided links below to our reference projects to download the relevant datasets.
+
+See this link to download relevant datasets such as "tinyimages80m"：
 https://github.com/hendrycks/outlier-exposure
 
 See this link to download and process the OOD data set for ImageNet-LT:

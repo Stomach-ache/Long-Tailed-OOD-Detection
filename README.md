@@ -108,6 +108,8 @@ python test_imagenet.py --gpu 0 --odc 30 \
 	--ckpt_path <where_you_save_the_ckpt>
 ```
 
+Since our experimental setup refers to previous papers, some relevant datasets such as "tinyimages80m" can be downloaded through this link：
+https://github.com/hendrycks/outlier-exposure
 
 ## Citation
 
